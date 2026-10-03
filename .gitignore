@@ -28,9 +28,6 @@ yarn-error.log*
 # local env files
 .env*.local
 
-# hardcoded API key protection
-app/api/estimate/route.ts
-
 # vercel
 .vercel
 
