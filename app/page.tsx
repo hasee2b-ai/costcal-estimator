@@ -71,6 +71,7 @@ export default function Home() {
     null,
   );
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const selectedCategory = useMemo(
     () => categories.find((item) => item.id === categoryId) ?? categories[0],
@@ -166,23 +167,86 @@ export default function Home() {
     window.setTimeout(() => scrollToSection("estimator"), 30);
   };
 
-  const continueQuestions = () => {
+  const continueQuestions = async () => {
     if (questionStep === 0) {
       setQuestionStep(1);
       return;
     }
 
-    const result = calculateEstimate(
-      description,
-      categoryId,
-      locationId,
-      sizeId,
-      qualityId,
-      autoCurrency ? currencyOverride : manualCurrency,
-    );
-    setEstimate(result);
-    setStage("complete");
-    window.setTimeout(() => scrollToSection("estimate-result"), 80);
+    setIsGenerating(true);
+
+    try {
+      const category = categories.find((c) => c.id === categoryId) ?? categories[0];
+      const location = locations.find((l) => l.id === locationId) ?? locations[0];
+      const size = projectSizes.find((s) => s.id === sizeId) ?? projectSizes[1];
+      const quality = qualityOptions.find((q) => q.id === qualityId) ?? qualityOptions[1];
+      const currency: CurrencyCode = autoCurrency ? (currencyOverride ?? detectCurrencyFromLocale()) : manualCurrency;
+
+      const response = await fetch("/api/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description,
+          categoryName: category.name,
+          categoryBase: category.base,
+          locationCountry: location.country,
+          locationCurrency: currency,
+          sizeName: size.name,
+          qualityName: quality.name,
+        }),
+      });
+
+      if (response.ok) {
+        const aiEstimate = await response.json();
+
+        const result: EstimateResult = {
+          projectTitle: aiEstimate.projectTitle,
+          description,
+          category,
+          location: { ...location, currency } as Location,
+          size,
+          quality,
+          items: aiEstimate.items,
+          subtotal: aiEstimate.subtotal,
+          contingency: aiEstimate.contingency,
+          taxes: aiEstimate.taxes,
+          total: aiEstimate.total,
+          low: aiEstimate.low,
+          high: aiEstimate.high,
+          confidence: aiEstimate.confidence,
+          durationMin: aiEstimate.durationMin,
+          durationMax: aiEstimate.durationMax,
+        };
+
+        setEstimate(result);
+      } else {
+        // Fallback to static calculation
+        const result = calculateEstimate(
+          description,
+          categoryId,
+          locationId,
+          sizeId,
+          qualityId,
+          autoCurrency ? currencyOverride : manualCurrency,
+        );
+        setEstimate(result);
+      }
+    } catch {
+      // Fallback to static calculation on any error
+      const result = calculateEstimate(
+        description,
+        categoryId,
+        locationId,
+        sizeId,
+        qualityId,
+        autoCurrency ? currencyOverride : manualCurrency,
+      );
+      setEstimate(result);
+    } finally {
+      setIsGenerating(false);
+      setStage("complete");
+      window.setTimeout(() => scrollToSection("estimate-result"), 80);
+    }
   };
 
   const resetEstimate = () => {
@@ -341,6 +405,7 @@ export default function Home() {
         questionStep={questionStep}
         estimate={estimate}
         descriptionReady={descriptionReady}
+        isGenerating={isGenerating}
         selectedCategory={selectedCategory}
         selectedLocation={selectedLocation}
         onDescriptionChange={setDescription}
